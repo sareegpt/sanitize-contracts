@@ -371,8 +371,13 @@ class ContractSanitizer:
         # 2. Email addresses
         if self.config.get('emails'):
             self.patterns.append(('emails', re.compile(
-                r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}'
+                r'[a-zA-Z0-9._%+\-]+@\s*@?[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}'
             ), '[REDACTED-EMAIL]'))
+            # "Email:" label followed by address (catches malformed extractions)
+            self.patterns.append(('emails', re.compile(
+                r'(?:Email|E-mail)\s*:\s*[a-zA-Z0-9._%+\-]+\s*@\s*@?\s*[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}',
+                re.IGNORECASE
+            ), 'Email: [REDACTED-EMAIL]'))
 
         # 3. SSN / EIN
         if self.config.get('ssn_ein'):
@@ -487,8 +492,9 @@ class ContractSanitizer:
                 re.IGNORECASE
             ), '[REDACTED-ACCOUNT]'))
 
-        # 10. Company names (with corporate suffixes - bounded quantifiers to prevent ReDoS)
+        # 10. Company names (with corporate suffixes)
         if self.config.get('company_names'):
+            # Mixed case: "Reynolds Consumer Products Inc."
             self.patterns.append(('company_names', re.compile(
                 r'\b(?:[A-Z][A-Za-z\'-]*(?:\s+(?:and|&|of|the)\s+)?){1,6}\s*'
                 r'(?:,\s*)?'
@@ -500,6 +506,20 @@ class ContractSanitizer:
                 r'Pharmaceuticals|BioManufacturing|Biotech|Industries)\b\.?',
                 re.MULTILINE
             ), '[REDACTED-COMPANY]'))
+            # ALL CAPS: "REYNOLDS CONSUMER PRODUCTS INC."
+            self.patterns.append(('company_names', re.compile(
+                r'\b(?:[A-Z][A-Z\'-]+(?:\s+(?:AND|&|OF|THE)\s+)?(?:\s+)?){1,8}'
+                r'(?:,\s*)?'
+                r'(?:INC\.?|LLC|LTD\.?|CORP\.?|CORPORATION|COMPANY|CO\.?|'
+                r'LLP|LP|PLC|PTE\.?|GMBH|AG|LIMITED|ASSOCIATES|PARTNERS|'
+                r'GROUP|HOLDINGS|ENTERPRISES|INTERNATIONAL|TECHNOLOGIES|'
+                r'SOLUTIONS|INDUSTRIES)\b\.?'
+            ), '[REDACTED-COMPANY]'))
+            # "Source: COMPANY NAME, S-1" SEC filing footers
+            self.patterns.append(('company_names', re.compile(
+                r'Source:\s+[A-Z][A-Z\s,\.&\'-]{3,60}(?:S-1|10-K|10-Q|8-K|S-4|F-1|DEF\s*14A|20-F)',
+                re.MULTILINE
+            ), 'Source: [REDACTED-COMPANY]'))
 
         # 11. Person names (contextual - most prone to false positives, so last)
         if self.config.get('person_names'):
@@ -519,10 +539,21 @@ class ContractSanitizer:
                 r'(?:Name|Signed|Authorized\s+by)\s*:\s*[A-Z][a-zA-Z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z]+){1,3}',
                 re.IGNORECASE
             ), '[REDACTED-NAME]'))
-            # /s/ signature blocks
+            # /s/ and //s// signature blocks
             self.patterns.append(('person_names', re.compile(
-                r'/s/\s*[A-Z][a-zA-Z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z]+){1,3}'
+                r'/{1,2}s/{1,2}\s*[A-Z][a-zA-Z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z]+){1,3}'
             ), '/s/ [REDACTED-NAME]'))
+            # "By:" followed by a name on the same or next line (signature blocks)
+            self.patterns.append(('person_names', re.compile(
+                r'(?:By|BY)\s*:\s*(?:/{1,2}s/{1,2}\s*)?[A-Z][a-zA-Z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z]+){1,3}'
+            ), 'By: [REDACTED-NAME]'))
+            # Standalone "Firstname Lastname" after a signature line (repeated name after //s//)
+            self.patterns.append(('person_names', re.compile(
+                r'(?:Chief\s+(?:Executive|Financial|Operating|Legal|Technology)\s+Officer|'
+                r'President|Vice\s+President|Secretary|Treasurer|General\s+Counsel|Director|'
+                r'CEO|CFO|COO|CTO|CLO)\s*$',
+                re.MULTILINE | re.IGNORECASE
+            ), '[REDACTED-TITLE]'))
             # "between ... and ..." party names (person names, 2-3 capitalized words)
             self.patterns.append(('person_names', re.compile(
                 r'(?:between|by\s+and\s+between|golfer,?|professional)\s+'
