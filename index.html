@@ -695,17 +695,11 @@ class ContractSanitizer:
         pdf.set_auto_page_break(auto=True, margin=20)
         pdf.add_page()
 
-        # Header
+        # Header - use multi_cell for maximum compatibility across fpdf2 versions
         pdf.set_font('Helvetica', 'B', 12)
-        try:
-            pdf.cell(0, 10, 'SANITIZED DOCUMENT', new_x='LMARGIN', new_y='NEXT', align='C')
-            pdf.set_font('Helvetica', 'I', 8)
-            pdf.cell(0, 6, 'Sensitive information has been redacted.', new_x='LMARGIN', new_y='NEXT', align='C')
-        except TypeError:
-            # Fallback for older fpdf2 versions
-            pdf.cell(0, 10, 'SANITIZED DOCUMENT', ln=True, align='C')
-            pdf.set_font('Helvetica', 'I', 8)
-            pdf.cell(0, 6, 'Sensitive information has been redacted.', ln=True, align='C')
+        pdf.multi_cell(0, 10, 'SANITIZED DOCUMENT', align='C')
+        pdf.set_font('Helvetica', 'I', 8)
+        pdf.multi_cell(0, 6, 'Sensitive information has been redacted.', align='C')
         pdf.ln(6)
         pdf.set_font('Helvetica', '', 9)
 
@@ -749,14 +743,17 @@ class ContractSanitizer:
         return pdf_bytes, dict(self.stats)
 
 
-def sanitize(file_bytes_list, extension, config_json='{}'):
-    """Entry point for JavaScript. Takes a list of ints (bytes), extension, config JSON.
+def sanitize(file_bytes_input, extension, config_json='{}'):
+    """Entry point for JavaScript. Accepts bytes, bytearray, or list of ints.
     Returns JSON with base64-encoded result and stats."""
     import base64
 
     config = json.loads(config_json)
     sanitizer = ContractSanitizer(config)
-    file_bytes = bytes(file_bytes_list)
+    if isinstance(file_bytes_input, (bytes, bytearray)):
+        file_bytes = bytes(file_bytes_input)
+    else:
+        file_bytes = bytes(file_bytes_input)
 
     ext = extension.lower().lstrip('.')
     method_map = {
@@ -857,16 +854,16 @@ def sanitize(file_bytes_list, extension, config_json='{}'):
             const micropip = pyodide.pyimport('micropip');
 
             setProgress(40, 'Installing openpyxl...');
-            await micropip.install('openpyxl==3.1.5');
+            await micropip.install('openpyxl');
 
             setProgress(55, 'Installing python-docx...');
-            await micropip.install('python-docx==1.1.2');
+            await micropip.install('python-docx');
 
             setProgress(70, 'Installing PyPDF2...');
-            await micropip.install('PyPDF2==3.0.1');
+            await micropip.install('PyPDF2');
 
             setProgress(82, 'Installing fpdf2...');
-            await micropip.install('fpdf2==2.8.3');
+            await micropip.install('fpdf2');
 
             setProgress(92, 'Loading sanitization engine...');
             const pyCode = document.getElementById('sanitizer-code').textContent;
@@ -956,16 +953,20 @@ def sanitize(file_bytes_list, extension, config_json='{}'):
         try {
             const arrayBuf = await next.file.arrayBuffer();
             const uint8 = new Uint8Array(arrayBuf);
-            const byteList = Array.from(uint8);
 
             const config = getConfig();
             const configJson = JSON.stringify(config);
 
-            // Call Python sanitizer - use Pyodide globals to avoid string injection
-            pyodide.globals.set('_file_bytes', pyodide.toPy(byteList));
+            // Pass bytes efficiently via Pyodide's buffer protocol
+            pyodide.globals.set('_file_bytes_raw', uint8);
             pyodide.globals.set('_file_ext', next.ext);
             pyodide.globals.set('_config_json', configJson);
-            const resultJson = pyodide.runPython(`sanitize(list(_file_bytes), str(_file_ext), str(_config_json))`);
+
+            // Use runPythonAsync to avoid blocking the main thread / message channel
+            const resultJson = await pyodide.runPythonAsync(`
+_bytes = bytes(_file_bytes_raw)
+sanitize(list(_bytes), str(_file_ext), str(_config_json))
+`);
             const result = JSON.parse(resultJson);
 
             if (result.error) {
