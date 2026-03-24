@@ -745,36 +745,44 @@ class ContractSanitizer:
         return pdf_bytes, dict(self.stats)
 
 
-def sanitize(file_bytes_input, extension, config_json='{}'):
-    """Entry point for JavaScript. Accepts bytes, bytearray, or list of ints.
+def sanitize_from_js(file_bytes_input, extension, config_json='{}'):
+    """Entry point called from JavaScript via Pyodide.
     Returns JSON with base64-encoded result and stats."""
     import base64
-
-    config = json.loads(config_json)
-    sanitizer = ContractSanitizer(config)
-    if isinstance(file_bytes_input, (bytes, bytearray)):
-        file_bytes = bytes(file_bytes_input)
-    else:
-        file_bytes = bytes(file_bytes_input)
-
-    ext = extension.lower().lstrip('.')
-    method_map = {
-        'txt': sanitizer.sanitize_txt,
-        'csv': sanitizer.sanitize_csv,
-        'xlsx': sanitizer.sanitize_xlsx,
-        'docx': sanitizer.sanitize_docx,
-        'pdf': sanitizer.sanitize_pdf,
-    }
-
-    if ext not in method_map:
-        return json.dumps({'error': f'Unsupported format: .{ext}', 'stats': {}})
+    import traceback
 
     try:
+        # Convert input to Python bytes
+        if isinstance(file_bytes_input, (bytes, bytearray)):
+            file_bytes = bytes(file_bytes_input)
+        elif isinstance(file_bytes_input, memoryview):
+            file_bytes = bytes(file_bytes_input)
+        else:
+            # Last resort: try to iterate as list of ints
+            file_bytes = bytes(list(file_bytes_input))
+
+        config = json.loads(config_json)
+        sanitizer = ContractSanitizer(config)
+
+        ext = extension.lower().lstrip('.')
+        method_map = {
+            'txt': sanitizer.sanitize_txt,
+            'csv': sanitizer.sanitize_csv,
+            'xlsx': sanitizer.sanitize_xlsx,
+            'docx': sanitizer.sanitize_docx,
+            'pdf': sanitizer.sanitize_pdf,
+        }
+
+        if ext not in method_map:
+            return json.dumps({'error': f'Unsupported format: .{ext}', 'stats': {}})
+
         result_bytes, stats = method_map[ext](file_bytes)
         result_b64 = base64.b64encode(result_bytes).decode('ascii')
         return json.dumps({'result': result_b64, 'stats': stats, 'error': None})
+
     except Exception as e:
-        return json.dumps({'error': str(e), 'stats': {}})
+        tb = traceback.format_exc()
+        return json.dumps({'error': f'{type(e).__name__}: {str(e)}', 'traceback': tb, 'stats': {}})
 </script>
 
 <script>
@@ -959,21 +967,24 @@ def sanitize(file_bytes_input, extension, config_json='{}'):
             const config = getConfig();
             const configJson = JSON.stringify(config);
 
-            // Pass bytes efficiently via Pyodide's buffer protocol
-            pyodide.globals.set('_file_bytes_raw', uint8);
+            // Pass file bytes to Python via Pyodide globals
             pyodide.globals.set('_file_ext', next.ext);
             pyodide.globals.set('_config_json', configJson);
 
-            // Use runPythonAsync to avoid blocking the main thread / message channel
+            // Convert Uint8Array to Python bytes using Pyodide's toPy
+            const pyBytes = pyodide.toPy(uint8);
+            pyodide.globals.set('_file_bytes_py', pyBytes);
+
+            // Use runPythonAsync to avoid blocking the main thread
             const resultJson = await pyodide.runPythonAsync(`
-_bytes = bytes(_file_bytes_raw)
-sanitize(list(_bytes), str(_file_ext), str(_config_json))
+sanitize_from_js(bytes(_file_bytes_py), str(_file_ext), str(_config_json))
 `);
             const result = JSON.parse(resultJson);
 
             if (result.error) {
                 next.status = 'error';
                 next.errorMsg = result.error;
+                if (result.traceback) console.error('Sanitizer traceback:', result.traceback);
             } else {
                 // Decode base64 result
                 const binaryStr = atob(result.result);
