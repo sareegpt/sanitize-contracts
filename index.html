@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contract Sanitizer - Local &amp; Private</title>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js" integrity="sha384-rm4QcPMX69sqmX2kWiJa3BF02sgdJkVyATWkw5NHAxBUAvmLXhToWZYaP2wCcyEe" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; connect-src https://cdn.jsdelivr.net https://files.pythonhosted.org https://pypi.org;">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--navy:#1a2332;--navy-light:#243447;--accent:#4a90d9;--accent-hover:#3a7bc8;--green:#27ae60;--red:#e74c3c;--orange:#f39c12;--bg:#f0f2f5;--card:#fff;--text:#333;--text-light:#666;--border:#e0e3e8;--shadow:0 2px 12px rgba(0,0,0,0.08)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+header{background:linear-gradient(135deg,var(--navy),var(--navy-light));color:#fff;padding:28px 0;text-align:center;position:relative}
+header h1{font-size:28px;font-weight:700;letter-spacing:-0.5px}
+header p{font-size:14px;opacity:0.7;margin-top:6px}
+.badge{display:inline-flex;align-items:center;gap:6px;background:rgba(74,144,217,0.2);border:1px solid rgba(74,144,217,0.4);border-radius:20px;padding:5px 14px;font-size:12px;margin-top:12px;color:#8bb8e8}
+.badge svg{width:14px;height:14px;fill:currentColor}
+.container{max-width:960px;margin:0 auto;padding:24px 20px}
+.card{background:var(--card);border-radius:12px;box-shadow:var(--shadow);padding:24px;margin-bottom:20px}
+.card h2{font-size:16px;font-weight:600;margin-bottom:16px;color:var(--navy)}
+
+/* Loading */
+#loading-section{text-align:center;padding:40px 24px}
+#loading-section h2{margin-bottom:12px}
+.progress-bar{width:100%;height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin:12px 0}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),#6db3f8);border-radius:4px;transition:width 0.4s ease;width:0%}
+#loading-status{font-size:13px;color:var(--text-light)}
+
+/* Settings */
+.settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#f8f9fb;border-radius:8px;font-size:13px}
+.toggle-row label{cursor:pointer;user-select:none}
+.switch{position:relative;width:40px;height:22px;flex-shrink:0}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#ccc;border-radius:22px;transition:.2s}
+.slider:before{content:"";position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s}
+.switch input:checked+.slider{background:var(--accent)}
+.switch input:checked+.slider:before{transform:translateX(18px)}
+
+/* Drop zone */
+.dropzone{border:2px dashed var(--border);border-radius:12px;padding:48px 24px;text-align:center;cursor:pointer;transition:all .2s;background:#fafbfc}
+.dropzone:hover,.dropzone.dragover{border-color:var(--accent);background:rgba(74,144,217,0.04)}
+.dropzone.disabled{opacity:0.5;cursor:not-allowed;pointer-events:none}
+.dropzone svg{width:48px;height:48px;fill:var(--accent);opacity:0.6;margin-bottom:12px}
+.dropzone p{font-size:15px;color:var(--text-light);margin-bottom:8px}
+.dropzone .formats{font-size:12px;color:#999}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 22px;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;transition:all .15s}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-hover)}
+.btn-primary:disabled{background:#aaa;cursor:not-allowed}
+.btn-green{background:var(--green);color:#fff}
+.btn-green:hover{background:#219a52}
+.btn-sm{padding:6px 14px;font-size:12px;border-radius:6px}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn-outline:hover{background:#f5f5f5}
+
+/* File list */
+.file-list{list-style:none}
+.file-item{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--border);font-size:13px}
+.file-item:last-child{border-bottom:none}
+.file-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;text-transform:uppercase}
+.ext-xlsx{background:#217346}.ext-docx{background:#2b579a}.ext-pdf{background:#d63031}.ext-txt{background:#636e72}.ext-csv{background:#e17055}
+.file-info{flex:1;min-width:0}
+.file-name{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-size{font-size:11px;color:#999;margin-top:2px}
+.file-status{font-size:12px;font-weight:500;flex-shrink:0}
+.status-pending{color:#999}
+.status-processing{color:var(--orange)}
+.status-done{color:var(--green)}
+.status-error{color:var(--red)}
+.file-stats{font-size:11px;color:var(--text-light);margin-top:3px}
+.file-actions{flex-shrink:0}
+
+/* Download all */
+.download-bar{display:flex;align-items:center;justify-content:space-between;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)}
+.download-bar .count{font-size:13px;color:var(--text-light)}
+
+/* Footer */
+footer{text-align:center;padding:24px;font-size:12px;color:#999}
+footer strong{color:#666}
+
+/* Spinner */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:4px}
+
+/* Info panel */
+.info-panel{border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:20px}
+.info-toggle{width:100%;padding:14px 20px;background:var(--card);border:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:600;color:var(--navy);font-family:inherit}
+.info-toggle:hover{background:#f8f9fb}
+.info-toggle .arrow{transition:transform .2s;font-size:12px;color:#999}
+.info-toggle.open .arrow{transform:rotate(180deg)}
+.info-body{display:none;padding:0 20px 20px;background:var(--card)}
+.info-body.open{display:block}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px}
+.info-block{padding:16px;border-radius:8px;font-size:13px;line-height:1.65}
+.info-block h3{font-size:14px;margin-bottom:8px;display:flex;align-items:center;gap:7px}
+.info-block h3 svg{width:18px;height:18px;flex-shrink:0}
+.info-block ul{margin:6px 0 0 18px;padding:0}
+.info-block li{margin-bottom:4px}
+.info-block.green{background:#f0faf4;border:1px solid #c6f0d5}.info-block.green h3{color:#1a7a3a}.info-block.green h3 svg{fill:#27ae60}
+.info-block.blue{background:#eef5fd;border:1px solid #c4daf5}.info-block.blue h3{color:#1e5fa6}.info-block.blue h3 svg{fill:#4a90d9}
+.info-block.amber{background:#fef9ee;border:1px solid #f5e3b3}.info-block.amber h3{color:#8a6d22}.info-block.amber h3 svg{fill:#d4a017}
+.info-block.red{background:#fdf0f0;border:1px solid #f5c4c4}.info-block.red h3{color:#a12b2b}.info-block.red h3 svg{fill:#d63031}
+
+/* Responsive */
+@media(max-width:600px){
+  .settings-grid{grid-template-columns:1fr}
+  .file-item{flex-wrap:wrap}
+  .container{padding:16px 12px}
+  .info-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Contract Sanitizer</h1>
+  <p>Local &amp; Private &mdash; Your files never leave your device</p>
+  <div class="badge">
+    <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
+    Client-Side Processing (CDN scripts loaded on init)
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Info Panel -->
+  <div class="info-panel">
+    <button class="info-toggle" id="info-toggle" onclick="this.classList.toggle('open');document.getElementById('info-body').classList.toggle('open')">
+      <span>How This Tool Works &mdash; Privacy, Limits &amp; Security</span>
+      <span class="arrow">&#9660;</span>
+    </button>
+    <div class="info-body" id="info-body">
+      <div class="info-grid">
+
+        <div class="info-block green">
+          <h3>
+            <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
+            Privacy Guarantee
+          </h3>
+          <ul>
+            <li><strong>Your files never leave your device.</strong> All sanitization runs locally inside your browser using WebAssembly (Pyodide).</li>
+            <li>No file contents are uploaded, transmitted, or stored on any server.</li>
+            <li>No analytics, tracking, cookies, or telemetry of any kind.</li>
+            <li>Works fully offline after the initial library load.</li>
+            <li>You can disconnect from the internet after the engine loads and it will still work.</li>
+            <li><strong>Prefer maximum privacy?</strong> Right-click this page, choose "Save As," and save the HTML file to your computer. Then open it directly from your desktop &mdash; no server or internet hosting needed. The entire application is this single file.</li>
+          </ul>
+        </div>
+
+        <div class="info-block blue">
+          <h3>
+            <svg viewBox="0 0 24 24"><path d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/></svg>
+            What It Detects
+          </h3>
+          <ul>
+            <li><strong>Personal Info:</strong> Names (contextual detection), email addresses, phone/fax numbers</li>
+            <li><strong>Identifiers:</strong> Social Security Numbers, EINs, credit card numbers, account/reference numbers</li>
+            <li><strong>Location Data:</strong> Street addresses, city/state/ZIP, PO Boxes</li>
+            <li><strong>Financial:</strong> Dollar amounts, compensation figures</li>
+            <li><strong>Other:</strong> Dates, URLs, IP addresses, company/organization names</li>
+            <li>Each category can be toggled on/off independently before processing.</li>
+          </ul>
+        </div>
+
+        <div class="info-block amber">
+          <h3>
+            <svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+            Known Limitations
+          </h3>
+          <ul>
+            <li><strong>Best-effort redaction.</strong> This tool uses pattern matching (regex), not AI. It may miss unconventional formats or context-dependent data.</li>
+            <li><strong>Name detection is imperfect.</strong> Uncommon names, names in running text without contextual clues, or non-English names may not be caught.</li>
+            <li><strong>DOCX run-splitting:</strong> Microsoft Word sometimes splits a single word across internal XML elements. A name or date split across runs may not be detected.</li>
+            <li><strong>PDF output is simplified.</strong> Sanitized PDFs are re-created as plain text &mdash; original formatting, images, and layout are not preserved.</li>
+            <li><strong>Max file size: 10 MB</strong> per file. Larger files may cause browser memory issues.</li>
+            <li><strong>Supported formats:</strong> XLSX, DOCX, PDF, TXT, CSV only.</li>
+            <li><strong>Always manually review</strong> sanitized output before sharing externally.</li>
+          </ul>
+        </div>
+
+        <div class="info-block red">
+          <h3>
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+            Security Considerations
+          </h3>
+          <ul>
+            <li><strong>CDN dependency:</strong> On first load, JavaScript libraries (Pyodide, JSZip) and Python packages are fetched from CDNs. These requests are code-only &mdash; no file data is sent.</li>
+            <li><strong>Integrity checks:</strong> CDN scripts use Subresource Integrity (SRI) hashes to prevent tampering. Python packages are pinned to exact versions.</li>
+            <li><strong>No server component:</strong> There is no backend, no API, no database. The HTML file is the entire application.</li>
+            <li><strong>Not a substitute for professional review.</strong> For highly sensitive or regulated documents (HIPAA, SOX, GDPR), pair this tool with manual review by qualified personnel.</li>
+            <li><strong>Open source &amp; auditable.</strong> The entire source code is visible by viewing this HTML file &mdash; nothing is hidden or obfuscated.</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div class="card" id="loading-section">
+    <h2>Initializing Sanitization Engine</h2>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+    <p id="loading-status">Loading Python runtime...</p>
+  </div>
+
+  <!-- Settings -->
+  <div class="card" id="settings-section" style="display:none">
+    <h2>Redaction Categories</h2>
+    <div class="settings-grid" id="settings-grid"></div>
+  </div>
+
+  <!-- Upload -->
+  <div class="card" id="upload-section" style="display:none">
+    <h2>Upload Files</h2>
+    <div class="dropzone disabled" id="dropzone">
+      <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+      <p>Drag &amp; drop files here, or click to browse</p>
+      <p class="formats">Supported: XLSX, DOCX, PDF, TXT, CSV</p>
+      <input type="file" id="file-input" multiple accept=".xlsx,.docx,.pdf,.txt,.csv" style="display:none">
+    </div>
+  </div>
+
+  <!-- File Queue -->
+  <div class="card" id="queue-section" style="display:none">
+    <h2>Processing Queue</h2>
+    <ul class="file-list" id="file-list"></ul>
+    <div class="download-bar" id="download-bar" style="display:none">
+      <span class="count" id="done-count"></span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-green" id="btn-download-all">Download All (ZIP)</button>
+        <button class="btn btn-outline btn-sm" id="btn-clear">Clear All</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <strong>Privacy Notice:</strong> All file processing happens locally in your browser using WebAssembly. No file data is sent to any server. JavaScript libraries are loaded from CDNs on startup only. Redaction is best-effort using pattern matching &mdash; always verify output before sharing. Max file size: 10 MB.
+</footer>
+
+<script id="sanitizer-code" type="text/python">
+import re
+import io
+import json
+import csv as csv_mod
+
+class ContractSanitizer:
+    CATEGORIES = [
+        ('emails', 'Email Addresses'),
+        ('phones', 'Phone Numbers'),
+        ('ssn_ein', 'SSN / EIN'),
+        ('addresses', 'Physical Addresses'),
+        ('dollar_amounts', 'Dollar Amounts'),
+        ('dates', 'Dates'),
+        ('urls', 'URLs'),
+        ('ip_addresses', 'IP Addresses'),
+        ('person_names', 'Person Names'),
+        ('company_names', 'Company Names'),
+        ('account_numbers', 'Account Numbers'),
+    ]
+
+    # Words that look like names but aren't (avoid over-redaction)
+    NOT_NAMES = {
+        'this','that','with','from','into','upon','such','each','both','they',
+        'them','their','than','then','also','only','more','most','very','just',
+        'been','being','have','will','would','could','should','shall','must',
+        'may','might','can','does','did','has','had','are','were','was','the',
+        'and','for','not','but','all','any','her','his','our','its','who',
+        'how','what','when','where','which','whom','whose','other','these',
+        'those','some','many','much','every','either','neither','here','there',
+        'about','above','after','again','against','before','below','between',
+        'during','under','until','while','within','without','through','although',
+        'because','since','unless','whether','whereas','hereby','herein',
+        'hereto','hereof','thereof','therein','thereto','therefore','however',
+        'provided','including','pursuant','notwithstanding','accordance',
+        'agreement','section','article','paragraph','exhibit','schedule',
+        'appendix','addendum','amendment','party','parties','recipient',
+        'provider','company','corporation','committee','board','director',
+        'officer','employee','agent','representative','affiliate','subsidiary',
+        'services','service','product','products','business','property',
+        'rights','obligations','payment','compensation','termination',
+        'confidential','information','notice','consent','approval','written',
+        'material','effective','date','term','period','annual','fiscal',
+        'calendar','reasonable','prior','further','general','specific',
+        'joint','venture','endorsement','agreement','contract','license',
+        'release','covenant','insurance','governing','law','state','federal',
+        'country','county','city','court','jurisdiction','dispute','claim',
+        'damages','liability','indemnification','indemnity','warranty',
+        'breach','default','remedy','relief','injunction','arbitration',
+        'confidentiality','intellectual','ownership','assignment','patent',
+        'copyright','trademark','trade','secret','non','compete','solicit',
+        'disclosure','force','majeure','severability','waiver','entire',
+        'miscellaneous','counterparts','construction','succession','titles',
+        'headings','amendments','waivers','benefit','binding','execution',
+        'witness','whereof','recitals','whereas','witnesseth','now','therefore',
+        'consideration','mutual','covenants','contained','herein','good',
+        'valuable','receipt','sufficiency','acknowledged','defined','below',
+        'above','set','forth','attached','hereto','incorporated','reference',
+        'made','part','United','States','America','New','North','South',
+        'East','West','January','February','March','April','May','June',
+        'July','August','September','October','November','December',
+        'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday',
+        'EXHIBIT','ARTICLE','SECTION','WHEREAS','THEREFORE','AGREEMENT',
+        'CONTRACT','SCHEDULE','APPENDIX','AMENDMENT','RECITALS','WITNESSETH',
+        'REDACTED','CONFIDENTIAL','TREATMENT','REQUESTED','PORTIONS',
+        'DOCUMENT','COMMISSION','FILED','SEPARATELY','COPY','INFORMATION',
+        'ENDORSEMENT','CONSULTANT','PRODUCT','MANDATORY','TERRITORY',
+        'OBLIGATIONS','COMPENSATION','TERMINATION','INDEMNITY','MISCELLANEOUS',
+        'If','The','This','That','Such','Each','Both','Any','All','No','Not',
+        'For','But','And','With','From','Into','Upon','CAPITAL','LOSSES',
+        'FIRST','SECOND','THIRD','FOURTH','FIFTH','AMENDMENT','MAINTENANCE',
+        'MANAGEMENT','TRANSMISSION','CURTAILMENT','PARTNERSHIP','CONTINUING',
+        'VALIDITY','LINE','POWER','CAPACITY','PARTNERS','PROJECTS','PRIME',
+        'ALPHA','BETA','GAMMA','DELTA','CERTAIN','GENERAL','TECHNICAL','USE',
+        'CALIFORNIA','FACTS','CIRCUMSTANCES','ADDITION','CONNECTION','PROVISION',
+        'AMOUNTS','EXPENSES','PRIORITY','RESPECT','RESPECTIVE','EFFECT','FULL',
+        'CONDITION','TERMS','CONDITIONS','REMAIN','FORCE','EXECUTION','FOLLOWING',
+        'PRECEDING','SENTENCE','APPLICABLE','PURSUANT','SUFFICIENT','CAUSE',
+        'DETERMINE','RESULT','EVENT','REASON','OTHER','EXCESS','LEVELS','PRIOR',
+        'IMMEDIATELY','REDUCE','ELIMINATE','RECURRENCE','GIVING','RISE',
+        'INCLUDING','PROVIDED','CHANGE','CONSENT','UNANIMOUS','WITHHELD','PAID',
+        'INFORM','WRITING','DISCRETION','ATTEMPT','COOPERATION','SHALL','HEREBY',
+        'THEREIN','INSERTING','DELETING','APPEARS','DEFINED',
+    }
+
+    # US states for address detection
+    US_STATES = (
+        r'Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|'
+        r'Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|'
+        r'Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|'
+        r'Mississippi|Missouri|Montana|Nebraska|Nevada|New\s+Hampshire|'
+        r'New\s+Jersey|New\s+Mexico|New\s+York|North\s+Carolina|North\s+Dakota|'
+        r'Ohio|Oklahoma|Oregon|Pennsylvania|Rhode\s+Island|South\s+Carolina|'
+        r'South\s+Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|'
+        r'West\s+Virginia|Wisconsin|Wyoming|'
+        r'AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|'
+        r'MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|'
+        r'SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|D\.?C\.?'
+    )
+
+    def __init__(self, config=None):
+        self.config = {}
+        for key, _ in self.CATEGORIES:
+            self.config[key] = True
+        if config:
+            self.config.update(config)
+        self.stats = {}
+        self._reset_stats()
+        self._build_patterns()
+
+    def _reset_stats(self):
+        for key, _ in self.CATEGORIES:
+            self.stats[key] = 0
+
+    def _build_patterns(self):
+        """Build ordered list of (category, compiled_regex, replacement) tuples."""
+        self.patterns = []
+
+        # 1. URLs (before emails to avoid partial matches)
+        if self.config.get('urls'):
+            self.patterns.append(('urls', re.compile(
+                r'https?://[^\s<>\"\')]+|www\.[^\s<>\"\')]+',
+                re.IGNORECASE
+            ), '[REDACTED-URL]'))
+
+        # 2. Email addresses
+        if self.config.get('emails'):
+            self.patterns.append(('emails', re.compile(
+                r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}'
+            ), '[REDACTED-EMAIL]'))
+
+        # 3. SSN / EIN
+        if self.config.get('ssn_ein'):
+            self.patterns.append(('ssn_ein', re.compile(
+                r'\b\d{3}-\d{2}-\d{4}\b'  # SSN with dashes
+            ), '[REDACTED-SSN]'))
+            self.patterns.append(('ssn_ein', re.compile(
+                r'\b(?:SSN|Social\s+Security(?:\s+Number)?)\s*[:#]?\s*\d{9}\b',  # SSN without dashes (contextual)
+                re.IGNORECASE
+            ), '[REDACTED-SSN]'))
+            self.patterns.append(('ssn_ein', re.compile(
+                r'\b\d{2}-\d{7}\b'  # EIN
+            ), '[REDACTED-EIN]'))
+
+        # 3b. Credit card numbers
+        if self.config.get('account_numbers'):
+            self.patterns.append(('account_numbers', re.compile(
+                r'\b(?:4\d{3}|5[1-5]\d{2}|6(?:011|5\d{2})|3[47]\d{2})[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b'
+            ), '[REDACTED-CARD]'))
+            self.patterns.append(('account_numbers', re.compile(
+                r'\b3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}\b'  # Amex
+            ), '[REDACTED-CARD]'))
+
+        # 4. IP addresses
+        if self.config.get('ip_addresses'):
+            self.patterns.append(('ip_addresses', re.compile(
+                r'\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b'
+            ), '[REDACTED-IP]'))
+
+        # 5. Phone / Fax numbers
+        if self.config.get('phones'):
+            self.patterns.append(('phones', re.compile(
+                r'(?:(?:Tel(?:ephone)?|Fax|Phone|Mobile|Cell|Office|Direct|Main)\s*(?::|#|No\.?|Number)?\s*)'
+                r'[\+]?[\d\s\(\)\-\.]{7,20}',
+                re.IGNORECASE
+            ), '[REDACTED-PHONE]'))
+            self.patterns.append(('phones', re.compile(
+                r'(?:\+?1[\s\-\.]?)?\(?\d{3}\)?[\s\-\.]\d{3}[\s\-\.]\d{4}\b'
+            ), '[REDACTED-PHONE]'))
+            self.patterns.append(('phones', re.compile(
+                r'\b\d{3}[\-\.]\d{4}\b'
+            ), '[REDACTED-PHONE]'))
+
+        # 6. Addresses
+        if self.config.get('addresses'):
+            # PO Box
+            self.patterns.append(('addresses', re.compile(
+                r'P\.?O\.?\s*Box\s+\d+[^,\n]*',
+                re.IGNORECASE
+            ), '[REDACTED-ADDRESS]'))
+            # Street address with city/state/zip (bounded to prevent ReDoS)
+            # Negative lookbehind prevents matching "Section 10.2" or "Article 12.3"
+            self.patterns.append(('addresses', re.compile(
+                r'(?<![Ss]ection\s)(?<![Aa]rticle\s)(?<![Pp]aragraph\s)(?<![Ee]xhibit\s)'
+                r'\b\d{2,6}\s+[A-Z][a-zA-Z\. ]{2,40}'
+                r'(?:Street|St\.?|Avenue|Ave\.?|Boulevard|Blvd\.?|Drive|Dr\.?|'
+                r'Road|Rd\.?|Lane|Ln\.?|Way|Court|Ct\.?|Place|Pl\.?|'
+                r'Circle|Cir\.?|Terrace|Ter\.?|Trail|Trl\.?|Parkway|Pkwy\.?|'
+                r'Highway|Hwy\.?|Suite|Ste\.?|Floor|Fl\.?)'
+                r'[^.!?\n]{0,80}(?:,\s{0,3}(?:' + self.US_STATES + r')\s{0,3}\d{5}(?:-\d{4})?)?',
+                re.IGNORECASE
+            ), '[REDACTED-ADDRESS]'))
+            # Simpler: city, STATE ZIP
+            self.patterns.append(('addresses', re.compile(
+                r'[A-Z][a-z]+(?:\s[A-Z][a-z]+)*,\s*(?:' + self.US_STATES + r')\s+\d{5}(?:-\d{4})?',
+                re.IGNORECASE
+            ), '[REDACTED-ADDRESS]'))
+
+        # 7. Dollar amounts
+        if self.config.get('dollar_amounts'):
+            self.patterns.append(('dollar_amounts', re.compile(
+                r'\$\s*[\d,]+(?:\.\d{1,2})?\s*(?:million|billion|thousand|hundred)?'
+                r'(?:\s*(?:dollars?|USD))?',
+                re.IGNORECASE
+            ), '[REDACTED-AMOUNT]'))
+            self.patterns.append(('dollar_amounts', re.compile(
+                r'\b[\d,]+(?:\.\d{1,2})?\s+(?:dollars?|USD)\b',
+                re.IGNORECASE
+            ), '[REDACTED-AMOUNT]'))
+
+        # 8. Dates
+        if self.config.get('dates'):
+            months = (r'January|February|March|April|May|June|July|August|'
+                      r'September|October|November|December|'
+                      r'Jan\.?|Feb\.?|Mar\.?|Apr\.?|Jun\.?|Jul\.?|Aug\.?|'
+                      r'Sep(?:t)?\.?|Oct\.?|Nov\.?|Dec\.?')
+            # Month DD, YYYY
+            self.patterns.append(('dates', re.compile(
+                r'\b(?:' + months + r')\s+\d{1,2}(?:st|nd|rd|th)?,?\s*\d{4}\b',
+                re.IGNORECASE
+            ), '[REDACTED-DATE]'))
+            # DD Month YYYY
+            self.patterns.append(('dates', re.compile(
+                r'\b\d{1,2}(?:st|nd|rd|th)?\s+(?:day\s+of\s+)?(?:' + months + r'),?\s*\d{4}\b',
+                re.IGNORECASE
+            ), '[REDACTED-DATE]'))
+            # MM/DD/YYYY or MM-DD-YYYY
+            self.patterns.append(('dates', re.compile(
+                r'\b\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b'
+            ), '[REDACTED-DATE]'))
+            # YYYY-MM-DD
+            self.patterns.append(('dates', re.compile(
+                r'\b\d{4}[/\-]\d{1,2}[/\-]\d{1,2}\b'
+            ), '[REDACTED-DATE]'))
+
+        # 9. Account / Reference numbers
+        if self.config.get('account_numbers'):
+            self.patterns.append(('account_numbers', re.compile(
+                r'(?:Account|Acct|Reference|Ref|Invoice|Inv|Policy|Routing|'
+                r'Claim|Case|File|Docket|Matter)\s*(?:#|No\.?|Number)\s*:?\s*'
+                r'[A-Z0-9\-]{4,20}',
+                re.IGNORECASE
+            ), '[REDACTED-ACCOUNT]'))
+
+        # 10. Company names (with corporate suffixes - bounded quantifiers to prevent ReDoS)
+        if self.config.get('company_names'):
+            self.patterns.append(('company_names', re.compile(
+                r'\b(?:[A-Z][A-Za-z\'-]*(?:\s+(?:and|&|of|the)\s+)?){1,6}\s*'
+                r'(?:,\s*)?'
+                r'(?:Inc\.?|LLC|L\.L\.C\.?|Ltd\.?|LTD\.?|Corp\.?|Corporation|'
+                r'Company|Co\.?|LLP|L\.L\.P\.?|LP|L\.P\.?|PLC|P\.L\.C\.?|'
+                r'PTE\.?|GmbH|AG|S\.A\.?|N\.V\.?|B\.V\.?|Pty\.? {0,2}Ltd\.?|'
+                r'Limited|Associates|Partners|Group|Holdings|Enterprises|'
+                r'International|Technologies|Solutions|Therapeutics|'
+                r'Pharmaceuticals|BioManufacturing|Biotech|Industries)\b\.?',
+                re.MULTILINE
+            ), '[REDACTED-COMPANY]'))
+
+        # 11. Person names (contextual - most prone to false positives, so last)
+        if self.config.get('person_names'):
+            # Names after title prefixes
+            self.patterns.append(('person_names', re.compile(
+                r'\b(?:Mr\.?|Mrs\.?|Ms\.?|Dr\.?|Prof\.?|Professor|'
+                r'Hon\.?|Honorable|Rev\.?|Reverend)\s+'
+                r'[A-Z][a-z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-z]+){1,3}\b'
+            ), '[REDACTED-NAME]'))
+            # "Attention:" or "Attn:" followed by name
+            self.patterns.append(('person_names', re.compile(
+                r'(?:Attention|Attn\.?)\s*:\s*[A-Z][a-zA-Z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z]+){1,3}',
+                re.IGNORECASE
+            ), 'Attention: [REDACTED-NAME]'))
+            # "Name:" followed by name
+            self.patterns.append(('person_names', re.compile(
+                r'(?:Name|Signed|Authorized\s+by)\s*:\s*[A-Z][a-zA-Z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z]+){1,3}',
+                re.IGNORECASE
+            ), '[REDACTED-NAME]'))
+            # /s/ signature blocks
+            self.patterns.append(('person_names', re.compile(
+                r'/s/\s*[A-Z][a-zA-Z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z]+){1,3}'
+            ), '/s/ [REDACTED-NAME]'))
+            # "between ... and ..." party names (person names, 2-3 capitalized words)
+            self.patterns.append(('person_names', re.compile(
+                r'(?:between|by\s+and\s+between|golfer,?|professional)\s+'
+                r'([A-Z][A-Z]+(?:\s+[A-Z][A-Z]*\.?){1,3})',
+                re.IGNORECASE
+            ), '[REDACTED-NAME]'))
+            # ALL CAPS person names (like TOM WATSON) - 2-3 capitalized words
+            self.patterns.append(('person_names', re.compile(
+                r'(?<![A-Z])\b([A-Z]{2,15}\s+[A-Z]{2,15}(?:\s+[A-Z]{2,15})?)\b(?![A-Z\-])'
+            ), self._check_caps_name))
+
+    def _check_caps_name(self, match):
+        """Check if an ALL-CAPS match is likely a person name vs a heading."""
+        text = match.group(0)
+        words = text.split()
+        # Skip if any word is a common non-name
+        for w in words:
+            wl = w.strip('.,;:')
+            if wl in self.NOT_NAMES or wl.upper() in {x.upper() for x in self.NOT_NAMES}:
+                return text  # Don't redact
+        # Skip if > 3 words (likely a heading)
+        if len(words) > 3:
+            return text
+        # Skip very short words that might be abbreviations
+        if all(len(w) <= 2 for w in words):
+            return text
+        self.stats['person_names'] = self.stats.get('person_names', 0) + 1
+        return '[REDACTED-NAME]'
+
+    def sanitize_text(self, text):
+        """Sanitize text content. Returns (sanitized_text, stats_dict)."""
+        self._reset_stats()
+        result = text
+
+        for category, pattern, replacement in self.patterns:
+            if callable(replacement):
+                result = pattern.sub(replacement, result)
+            else:
+                def make_replacer(cat, repl):
+                    def replacer(m):
+                        self.stats[cat] = self.stats.get(cat, 0) + 1
+                        return repl
+                    return replacer
+                result = pattern.sub(make_replacer(category, replacement), result)
+
+        return result, dict(self.stats)
+
+    def sanitize_txt(self, file_bytes):
+        """Sanitize plain text file bytes."""
+        try:
+            text = file_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            text = file_bytes.decode('latin-1')
+        sanitized, stats = self.sanitize_text(text)
+        return sanitized.encode('utf-8'), stats
+
+    def sanitize_csv(self, file_bytes):
+        """Sanitize CSV file."""
+        try:
+            text = file_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            text = file_bytes.decode('latin-1')
+
+        self._reset_stats()
+        reader = csv_mod.reader(io.StringIO(text))
+        output = io.StringIO()
+        writer = csv_mod.writer(output)
+
+        for row in reader:
+            new_row = []
+            for cell in row:
+                sanitized, cell_stats = self.sanitize_text(cell)
+                for k, v in cell_stats.items():
+                    self.stats[k] = self.stats.get(k, 0) + v
+                new_row.append(sanitized)
+            writer.writerow(new_row)
+
+        return output.getvalue().encode('utf-8'), dict(self.stats)
+
+    def sanitize_xlsx(self, file_bytes):
+        """Sanitize XLSX file using openpyxl."""
+        import openpyxl
+
+        self._reset_stats()
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes))
+
+        for ws in wb.worksheets:
+            for row in ws.iter_rows():
+                for cell in row:
+                    if cell.value and isinstance(cell.value, str):
+                        sanitized, cell_stats = self.sanitize_text(cell.value)
+                        cell.value = sanitized
+                        for k, v in cell_stats.items():
+                            self.stats[k] = self.stats.get(k, 0) + v
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue(), dict(self.stats)
+
+    def sanitize_docx(self, file_bytes):
+        """Sanitize DOCX file using python-docx."""
+        import docx
+
+        self._reset_stats()
+        doc = docx.Document(io.BytesIO(file_bytes))
+
+        # Sanitize paragraphs
+        for para in doc.paragraphs:
+            for run in para.runs:
+                if run.text:
+                    sanitized, run_stats = self.sanitize_text(run.text)
+                    run.text = sanitized
+                    for k, v in run_stats.items():
+                        self.stats[k] = self.stats.get(k, 0) + v
+
+        # Sanitize tables
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        for run in para.runs:
+                            if run.text:
+                                sanitized, run_stats = self.sanitize_text(run.text)
+                                run.text = sanitized
+                                for k, v in run_stats.items():
+                                    self.stats[k] = self.stats.get(k, 0) + v
+
+        # Sanitize headers/footers
+        for section in doc.sections:
+            for header_footer in [section.header, section.footer]:
+                if header_footer:
+                    for para in header_footer.paragraphs:
+                        for run in para.runs:
+                            if run.text:
+                                sanitized, run_stats = self.sanitize_text(run.text)
+                                run.text = sanitized
+                                for k, v in run_stats.items():
+                                    self.stats[k] = self.stats.get(k, 0) + v
+
+        buf = io.BytesIO()
+        doc.save(buf)
+        return buf.getvalue(), dict(self.stats)
+
+    def sanitize_pdf(self, file_bytes):
+        """Sanitize PDF: extract text, sanitize, create new PDF."""
+        import PyPDF2
+        from fpdf import FPDF
+
+        self._reset_stats()
+
+        # Extract text from PDF
+        reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+        all_text = []
+        for page in reader.pages:
+            try:
+                text = page.extract_text()
+                if text:
+                    all_text.append(text)
+            except Exception:
+                all_text.append('[Unable to extract text from this page]')
+
+        if not all_text:
+            return file_bytes, dict(self.stats)  # Return original if no text extracted
+
+        full_text = '\n\n--- Page Break ---\n\n'.join(all_text)
+        sanitized, stats = self.sanitize_text(full_text)
+        for k, v in stats.items():
+            self.stats[k] = self.stats.get(k, 0) + v
+
+        # Create new PDF with sanitized text
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=20)
+        pdf.add_page()
+
+        # Header
+        pdf.set_font('Helvetica', 'B', 12)
+        try:
+            pdf.cell(0, 10, 'SANITIZED DOCUMENT', new_x='LMARGIN', new_y='NEXT', align='C')
+            pdf.set_font('Helvetica', 'I', 8)
+            pdf.cell(0, 6, 'Sensitive information has been redacted.', new_x='LMARGIN', new_y='NEXT', align='C')
+        except TypeError:
+            # Fallback for older fpdf2 versions
+            pdf.cell(0, 10, 'SANITIZED DOCUMENT', ln=True, align='C')
+            pdf.set_font('Helvetica', 'I', 8)
+            pdf.cell(0, 6, 'Sensitive information has been redacted.', ln=True, align='C')
+        pdf.ln(6)
+        pdf.set_font('Helvetica', '', 9)
+
+        # Write sanitized text line by line
+        page_width = pdf.w - pdf.l_margin - pdf.r_margin
+        char_width = pdf.get_string_width('a') or 2.5
+        max_chars = max(20, int(page_width / char_width))
+
+        for line in sanitized.split('\n'):
+            # Handle encoding - fpdf2 Helvetica only supports latin-1
+            try:
+                safe_line = line.encode('latin-1', 'replace').decode('latin-1')
+            except Exception:
+                safe_line = line.encode('ascii', 'replace').decode('ascii')
+
+            # Strip control characters that crash fpdf2
+            safe_line = ''.join(c if ord(c) >= 32 or c in '\t' else ' ' for c in safe_line)
+
+            # Force-wrap very long unbroken tokens
+            if safe_line and len(safe_line) > max_chars and ' ' not in safe_line.strip():
+                chunks = [safe_line[i:i+max_chars] for i in range(0, len(safe_line), max_chars)]
+                for chunk in chunks:
+                    try:
+                        pdf.multi_cell(0, 4.5, chunk)
+                    except Exception:
+                        pass
+            else:
+                try:
+                    pdf.multi_cell(0, 4.5, safe_line)
+                except Exception:
+                    # Fallback: truncate the line
+                    try:
+                        pdf.multi_cell(0, 4.5, safe_line[:max_chars])
+                    except Exception:
+                        pass  # Skip completely unrenderable lines
+
+        # Output to bytes
+        pdf_bytes = pdf.output()  # fpdf2 returns bytes directly when no arg
+        if isinstance(pdf_bytes, bytearray):
+            pdf_bytes = bytes(pdf_bytes)
+        return pdf_bytes, dict(self.stats)
+
+
+def sanitize(file_bytes_list, extension, config_json='{}'):
+    """Entry point for JavaScript. Takes a list of ints (bytes), extension, config JSON.
+    Returns JSON with base64-encoded result and stats."""
+    import base64
+
+    config = json.loads(config_json)
+    sanitizer = ContractSanitizer(config)
+    file_bytes = bytes(file_bytes_list)
+
+    ext = extension.lower().lstrip('.')
+    method_map = {
+        'txt': sanitizer.sanitize_txt,
+        'csv': sanitizer.sanitize_csv,
+        'xlsx': sanitizer.sanitize_xlsx,
+        'docx': sanitizer.sanitize_docx,
+        'pdf': sanitizer.sanitize_pdf,
+    }
+
+    if ext not in method_map:
+        return json.dumps({'error': f'Unsupported format: .{ext}', 'stats': {}})
+
+    try:
+        result_bytes, stats = method_map[ext](file_bytes)
+        result_b64 = base64.b64encode(result_bytes).decode('ascii')
+        return json.dumps({'result': result_b64, 'stats': stats, 'error': None})
+    except Exception as e:
+        return json.dumps({'error': str(e), 'stats': {}})
+</script>
+
+<script>
+(function() {
+    // State
+    let pyodide = null;
+    let engineReady = false;
+    const fileQueue = []; // {id, file, name, ext, status, stats, resultBlob}
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+    // Security: HTML escape to prevent XSS via filenames
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
+    }
+
+    // DOM refs
+    const loadingSection = document.getElementById('loading-section');
+    const settingsSection = document.getElementById('settings-section');
+    const uploadSection = document.getElementById('upload-section');
+    const queueSection = document.getElementById('queue-section');
+    const progressFill = document.getElementById('progress-fill');
+    const loadingStatus = document.getElementById('loading-status');
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file-input');
+    const fileList = document.getElementById('file-list');
+    const downloadBar = document.getElementById('download-bar');
+    const doneCount = document.getElementById('done-count');
+    const btnDownloadAll = document.getElementById('btn-download-all');
+    const btnClear = document.getElementById('btn-clear');
+    const settingsGrid = document.getElementById('settings-grid');
+
+    // Category config
+    const categories = [
+        ['emails', 'Email Addresses'],
+        ['phones', 'Phone Numbers'],
+        ['ssn_ein', 'SSN / EIN'],
+        ['addresses', 'Physical Addresses'],
+        ['dollar_amounts', 'Dollar Amounts'],
+        ['dates', 'Dates'],
+        ['urls', 'URLs'],
+        ['ip_addresses', 'IP Addresses'],
+        ['person_names', 'Person Names'],
+        ['company_names', 'Company Names'],
+        ['account_numbers', 'Account Numbers'],
+    ];
+
+    // Build settings toggles
+    categories.forEach(([key, label]) => {
+        const row = document.createElement('div');
+        row.className = 'toggle-row';
+        row.innerHTML = `
+            <label for="toggle-${key}">${label}</label>
+            <div class="switch">
+                <input type="checkbox" id="toggle-${key}" data-cat="${key}" checked>
+                <span class="slider"></span>
+            </div>`;
+        settingsGrid.appendChild(row);
+    });
+
+    function getConfig() {
+        const config = {};
+        categories.forEach(([key]) => {
+            const el = document.getElementById('toggle-' + key);
+            config[key] = el ? el.checked : true;
+        });
+        return config;
+    }
+
+    // Initialize Pyodide
+    async function initPyodide() {
+        try {
+            setProgress(10, 'Loading Python runtime (this may take a moment)...');
+            pyodide = await loadPyodide();
+
+            setProgress(30, 'Installing openpyxl...');
+            await pyodide.loadPackage('micropip');
+            const micropip = pyodide.pyimport('micropip');
+
+            setProgress(40, 'Installing openpyxl...');
+            await micropip.install('openpyxl==3.1.5');
+
+            setProgress(55, 'Installing python-docx...');
+            await micropip.install('python-docx==1.1.2');
+
+            setProgress(70, 'Installing PyPDF2...');
+            await micropip.install('PyPDF2==3.0.1');
+
+            setProgress(82, 'Installing fpdf2...');
+            await micropip.install('fpdf2==2.8.3');
+
+            setProgress(92, 'Loading sanitization engine...');
+            const pyCode = document.getElementById('sanitizer-code').textContent;
+            pyodide.runPython(pyCode);
+
+            setProgress(100, 'Ready!');
+
+            setTimeout(() => {
+                loadingSection.style.display = 'none';
+                settingsSection.style.display = '';
+                uploadSection.style.display = '';
+                dropzone.classList.remove('disabled');
+                engineReady = true;
+            }, 600);
+
+        } catch (err) {
+            setProgress(0, 'Error: ' + err.message + '. Please refresh the page.');
+            console.error(err);
+        }
+    }
+
+    function setProgress(pct, msg) {
+        progressFill.style.width = pct + '%';
+        loadingStatus.textContent = msg;
+    }
+
+    // File handling
+    const SUPPORTED = new Set(['xlsx', 'docx', 'pdf', 'txt', 'csv']);
+
+    function getExt(name) {
+        return (name.split('.').pop() || '').toLowerCase();
+    }
+
+    function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    function addFiles(files) {
+        if (!engineReady) return;
+        for (const file of files) {
+            const ext = getExt(file.name);
+            if (!SUPPORTED.has(ext)) {
+                alert(`Unsupported file type: .${ext}\nSupported: xlsx, docx, pdf, txt, csv`);
+                continue;
+            }
+            if (file.size > MAX_FILE_SIZE) {
+                alert(`File "${file.name}" exceeds the 10 MB size limit (${formatSize(file.size)}).`);
+                continue;
+            }
+            // Sanitize extension to only allow known safe values
+            if (!/^[a-z]{2,4}$/.test(ext)) {
+                alert(`Invalid file extension: .${ext}`);
+                continue;
+            }
+            const id = Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+            fileQueue.push({ id, file, name: file.name, ext, status: 'pending', stats: null, resultBlob: null });
+        }
+        renderQueue();
+        processQueue();
+    }
+
+    // Drag & drop
+    dropzone.addEventListener('click', () => { if (engineReady) fileInput.click(); });
+    fileInput.addEventListener('change', (e) => { addFiles(e.target.files); fileInput.value = ''; });
+
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => { dropzone.classList.remove('dragover'); });
+    dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+        addFiles(e.dataTransfer.files);
+    });
+
+    // Process queue
+    let processing = false;
+    async function processQueue() {
+        if (processing) return;
+        const next = fileQueue.find(f => f.status === 'pending');
+        if (!next) return;
+
+        processing = true;
+        next.status = 'processing';
+        renderQueue();
+
+        try {
+            const arrayBuf = await next.file.arrayBuffer();
+            const uint8 = new Uint8Array(arrayBuf);
+            const byteList = Array.from(uint8);
+
+            const config = getConfig();
+            const configJson = JSON.stringify(config);
+
+            // Call Python sanitizer - use Pyodide globals to avoid string injection
+            pyodide.globals.set('_file_bytes', pyodide.toPy(byteList));
+            pyodide.globals.set('_file_ext', next.ext);
+            pyodide.globals.set('_config_json', configJson);
+            const resultJson = pyodide.runPython(`sanitize(list(_file_bytes), str(_file_ext), str(_config_json))`);
+            const result = JSON.parse(resultJson);
+
+            if (result.error) {
+                next.status = 'error';
+                next.errorMsg = result.error;
+            } else {
+                // Decode base64 result
+                const binaryStr = atob(result.result);
+                const bytes = new Uint8Array(binaryStr.length);
+                for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+
+                const mimeTypes = {
+                    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'pdf': 'application/pdf',
+                    'txt': 'text/plain',
+                    'csv': 'text/csv',
+                };
+
+                next.resultBlob = new Blob([bytes], { type: mimeTypes[next.ext] || 'application/octet-stream' });
+                next.stats = result.stats;
+                next.status = 'done';
+            }
+        } catch (err) {
+            next.status = 'error';
+            next.errorMsg = err.message;
+            console.error(err);
+        }
+
+        processing = false;
+        renderQueue();
+        processQueue(); // Process next in queue
+    }
+
+    // Render
+    function renderQueue() {
+        if (fileQueue.length === 0) {
+            queueSection.style.display = 'none';
+            return;
+        }
+        queueSection.style.display = '';
+        fileList.innerHTML = '';
+
+        fileQueue.forEach(item => {
+            const li = document.createElement('li');
+            li.className = 'file-item';
+
+            let statusHtml = '';
+            if (item.status === 'pending') statusHtml = '<span class="file-status status-pending">Pending</span>';
+            else if (item.status === 'processing') statusHtml = '<span class="file-status status-processing"><span class="spinner"></span>Processing</span>';
+            else if (item.status === 'done') statusHtml = '<span class="file-status status-done">Done</span>';
+            else statusHtml = '<span class="file-status status-error" title="' + escapeHtml(item.errorMsg || '') + '">Error</span>';
+
+            let statsHtml = '';
+            if (item.stats) {
+                const parts = [];
+                const labels = {
+                    emails: 'Emails', phones: 'Phones', ssn_ein: 'SSN/EIN',
+                    addresses: 'Addresses', dollar_amounts: 'Amounts', dates: 'Dates',
+                    urls: 'URLs', ip_addresses: 'IPs', person_names: 'Names',
+                    company_names: 'Companies', account_numbers: 'Accounts'
+                };
+                for (const [k, v] of Object.entries(item.stats)) {
+                    if (v > 0) parts.push(`${labels[k] || k}: ${v}`);
+                }
+                if (parts.length > 0) {
+                    statsHtml = '<div class="file-stats">Redacted: ' + parts.join(' | ') + '</div>';
+                } else {
+                    statsHtml = '<div class="file-stats">No sensitive data detected</div>';
+                }
+            }
+
+            let actionHtml = '';
+            if (item.status === 'done') {
+                actionHtml = `<button class="btn btn-green btn-sm" data-download="${item.id}">Download</button>`;
+            }
+
+            li.innerHTML = `
+                <div class="file-icon ext-${escapeHtml(item.ext)}">${escapeHtml(item.ext)}</div>
+                <div class="file-info">
+                    <div class="file-name">${escapeHtml(item.name)}</div>
+                    <div class="file-size">${formatSize(item.file.size)}</div>
+                    ${statsHtml}
+                </div>
+                ${statusHtml}
+                <div class="file-actions">${actionHtml}</div>`;
+            fileList.appendChild(li);
+        });
+
+        // Download bar
+        const doneFiles = fileQueue.filter(f => f.status === 'done');
+        if (doneFiles.length > 0) {
+            downloadBar.style.display = 'flex';
+            const total = fileQueue.length;
+            const done = doneFiles.length;
+            const errors = fileQueue.filter(f => f.status === 'error').length;
+            doneCount.textContent = `${done} of ${total} processed` + (errors > 0 ? ` (${errors} error${errors>1?'s':''})` : '');
+        } else {
+            downloadBar.style.display = 'none';
+        }
+    }
+
+    // Download handlers
+    fileList.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-download]');
+        if (!btn) return;
+        const id = btn.dataset.download;
+        const item = fileQueue.find(f => f.id === id);
+        if (item && item.resultBlob) {
+            downloadFile(item.resultBlob, 'SANITIZED_' + item.name);
+        }
+    });
+
+    btnDownloadAll.addEventListener('click', async () => {
+        const doneFiles = fileQueue.filter(f => f.status === 'done' && f.resultBlob);
+        if (doneFiles.length === 0) return;
+
+        if (doneFiles.length === 1) {
+            downloadFile(doneFiles[0].resultBlob, 'SANITIZED_' + doneFiles[0].name);
+            return;
+        }
+
+        btnDownloadAll.disabled = true;
+        btnDownloadAll.textContent = 'Creating ZIP...';
+        try {
+            const zip = new JSZip();
+            for (const item of doneFiles) {
+                zip.file('SANITIZED_' + item.name, item.resultBlob);
+            }
+            const blob = await zip.generateAsync({ type: 'blob' });
+            downloadFile(blob, 'SANITIZED_contracts.zip');
+        } catch (err) {
+            alert('Error creating ZIP: ' + err.message);
+        }
+        btnDownloadAll.disabled = false;
+        btnDownloadAll.textContent = 'Download All (ZIP)';
+    });
+
+    btnClear.addEventListener('click', () => {
+        fileQueue.length = 0;
+        renderQueue();
+    });
+
+    function downloadFile(blob, name) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    // Start
+    initPyodide();
+})();
+</script>
+</body>
+</html>
