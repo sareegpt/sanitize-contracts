@@ -154,15 +154,15 @@ footer strong{color:#666}
         <div class="info-block blue">
           <h3>
             <svg viewBox="0 0 24 24"><path d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/></svg>
-            What It Detects
+            What It Does
           </h3>
           <ul>
-            <li><strong>Personal Info:</strong> Names (contextual detection), email addresses, phone/fax numbers</li>
-            <li><strong>Identifiers:</strong> Social Security Numbers, EINs, credit card numbers, account/reference numbers</li>
-            <li><strong>Location Data:</strong> Street addresses, city/state/ZIP, PO Boxes</li>
-            <li><strong>Financial:</strong> Dollar amounts, compensation figures</li>
-            <li><strong>Other:</strong> Dates, URLs, IP addresses, company/organization names</li>
-            <li>Each category can be toggled on/off independently before processing.</li>
+            <li><strong>Detects &amp; redacts:</strong> Names, emails, phone/fax numbers, SSN/EIN, credit cards, account numbers, street addresses (US &amp; international), dollar amounts, dates, URLs, IP addresses, and company/organization names.</li>
+            <li><strong>Supported input formats:</strong> XLSX, DOCX, PDF, TXT, CSV.</li>
+            <li><strong>PDF &rarr; Word output:</strong> PDF files are converted to <strong>.docx (Word)</strong> so you can review and make final edits. The original PDF formatting is not preserved &mdash; the focus is on clean, reviewable text.</li>
+            <li><strong>Yellow highlights = needs your review.</strong> Items the engine suspects might be PII but wasn't confident enough to auto-redact are highlighted in <strong style="background:#fff3a0;padding:1px 4px;border-radius:2px">yellow</strong>. Open the Word file and decide whether to redact them.</li>
+            <li><strong>Red bold = auto-redacted.</strong> Confirmed PII appears as <strong style="color:#b40000">[REDACTED-TYPE]</strong> tags. These are high-confidence redactions.</li>
+            <li>Each redaction category can be toggled on/off independently before processing.</li>
           </ul>
         </div>
 
@@ -173,12 +173,11 @@ footer strong{color:#666}
           </h3>
           <ul>
             <li><strong>Best-effort redaction.</strong> This tool uses pattern matching (regex), not AI. It may miss unconventional formats or context-dependent data.</li>
-            <li><strong>Name detection is imperfect.</strong> Uncommon names, names in running text without contextual clues, or non-English names may not be caught.</li>
-            <li><strong>DOCX run-splitting:</strong> Microsoft Word sometimes splits a single word across internal XML elements. A name or date split across runs may not be detected.</li>
-            <li><strong>PDF output is simplified.</strong> Sanitized PDFs are re-created as plain text &mdash; original formatting, images, and layout are not preserved.</li>
+            <li><strong>Name detection is imperfect.</strong> Uncommon names, names in running text without contextual clues, or non-English names may not be caught. The yellow highlight system helps flag these for your review.</li>
+            <li><strong>DOCX run-splitting:</strong> Microsoft Word sometimes splits a single word across internal XML elements. A name or date split across Word runs may not be detected.</li>
+            <li><strong>PDF text extraction:</strong> PDFs with scanned images, complex layouts, or unusual fonts may not extract cleanly. Always check the Word output for completeness.</li>
             <li><strong>Max file size: 10 MB</strong> per file. Larger files may cause browser memory issues.</li>
-            <li><strong>Supported formats:</strong> XLSX, DOCX, PDF, TXT, CSV only.</li>
-            <li><strong>Always manually review</strong> sanitized output before sharing externally.</li>
+            <li><strong>Always manually review</strong> sanitized output before sharing externally &mdash; especially the yellow-highlighted items in Word documents.</li>
           </ul>
         </div>
 
@@ -189,9 +188,9 @@ footer strong{color:#666}
           </h3>
           <ul>
             <li><strong>CDN dependency:</strong> On first load, JavaScript libraries (Pyodide, JSZip) and Python packages are fetched from CDNs. These requests are code-only &mdash; no file data is sent.</li>
-            <li><strong>Integrity checks:</strong> CDN scripts use Subresource Integrity (SRI) hashes to prevent tampering. Python packages are pinned to exact versions.</li>
+            <li><strong>Integrity checks:</strong> CDN scripts use Subresource Integrity (SRI) hashes to prevent tampering.</li>
             <li><strong>No server component:</strong> There is no backend, no API, no database. The HTML file is the entire application.</li>
-            <li><strong>Not a substitute for professional review.</strong> For highly sensitive or regulated documents (HIPAA, SOX, GDPR), pair this tool with manual review by qualified personnel.</li>
+            <li><strong>Not a substitute for professional review.</strong> For highly sensitive or regulated documents (HIPAA, SOX, GDPR), pair this tool with manual review by qualified personnel. The yellow highlight system is designed to support this workflow.</li>
             <li><strong>Open source &amp; auditable.</strong> The entire source code is visible by viewing this HTML file &mdash; nothing is hidden or obfuscated.</li>
           </ul>
         </div>
@@ -240,7 +239,7 @@ footer strong{color:#666}
 </div>
 
 <footer>
-  <strong>Privacy Notice:</strong> All file processing happens locally in your browser using WebAssembly. No file data is sent to any server. JavaScript libraries are loaded from CDNs on startup only. Redaction is best-effort using pattern matching &mdash; always verify output before sharing. Max file size: 10 MB.
+  <strong>Privacy Notice:</strong> All file processing happens locally in your browser using WebAssembly. No file data is sent to any server. JavaScript libraries are loaded from CDNs on startup only. Redaction is best-effort using pattern matching &mdash; always review the output before sharing, especially yellow-highlighted items. PDF files are output as Word (.docx) for easy manual review. Max file size: 10 MB.
 </footer>
 
 <script id="sanitizer-code" type="text/python">
