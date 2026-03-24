@@ -526,35 +526,47 @@ class ContractSanitizer:
 
         # 11. Person names (contextual - most prone to false positives, so last)
         if self.config.get('person_names'):
-            # Names after title prefixes
+            # Names after title prefixes (handle apostrophes/hyphens in names)
             self.patterns.append(('person_names', re.compile(
                 r'\b(?:Mr\.?|Mrs\.?|Ms\.?|Dr\.?|Prof\.?|Professor|'
                 r'Hon\.?|Honorable|Rev\.?|Reverend)\s+'
-                r'[A-Z][a-z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-z]+){1,3}\b'
+                r'[A-Z][a-z\']+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-z\'\-]+){1,3}\b'
             ), '[REDACTED-NAME]'))
             # "Attention:" or "Attn:" followed by name
             self.patterns.append(('person_names', re.compile(
-                r'(?:Attention|Attn\.?)\s*:\s*[A-Z][a-zA-Z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z]+){1,3}',
+                r'(?:Attention|Attn\.?)\s*:\s*[A-Z][a-zA-Z\']+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z\'\-]+){1,3}',
                 re.IGNORECASE
             ), 'Attention: [REDACTED-NAME]'))
             # "Name:" followed by name
             self.patterns.append(('person_names', re.compile(
-                r'(?:Name|Signed|Authorized\s+by)\s*:\s*[A-Z][a-zA-Z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z]+){1,3}',
+                r'(?:Name|Signed|Authorized\s+by)\s*:\s*[A-Z][a-zA-Z\']+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z\'\-]+){1,3}',
                 re.IGNORECASE
             ), '[REDACTED-NAME]'))
-            # /s/ and //s// signature blocks
+            # /s/ and //s// signature blocks (handle middle initials, apostrophes, hyphens)
             self.patterns.append(('person_names', re.compile(
-                r'/{1,2}s/{1,2}\s*[A-Z][a-zA-Z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z]+){1,3}'
+                r'/{1,2}s/{1,2}\s*[A-Z][a-zA-Z\']+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z\'\-]+){1,3}'
             ), '/s/ [REDACTED-NAME]'))
-            # "By:" followed by a name on the same or next line (signature blocks)
+            # "By:" followed by a name
             self.patterns.append(('person_names', re.compile(
-                r'(?:By|BY)\s*:\s*(?:/{1,2}s/{1,2}\s*)?[A-Z][a-zA-Z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z]+){1,3}'
+                r'(?:By|BY)\s*:\s*(?:/{1,2}s/{1,2}\s*)?[A-Z][a-zA-Z\']+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z\'\-]+){1,3}'
             ), 'By: [REDACTED-NAME]'))
-            # Standalone "Firstname Lastname" after a signature line (repeated name after //s//)
+            # "Firstname M. Lastname, Title" pattern (signature blocks, printed name lines)
+            self.patterns.append(('person_names', re.compile(
+                r'\b[A-Z][a-z\']+\s+[A-Z]\.\s+[A-Z][a-zA-Z\'\-]+(?:,\s*(?:Assistant|Manager|Clerk|'
+                r'President|Vice\s+President|Secretary|Treasurer|Director|Counsel|Officer|'
+                r'Town\s+\w+|Assistant\s+to\s+\w+)[^\n]{0,30})?'
+            ), '[REDACTED-NAME]'))
+            # "M. Lastname" fragment (orphaned after other redactions in signature blocks)
+            self.patterns.append(('person_names', re.compile(
+                r'\b[A-Z]\.\s+[A-Z][a-zA-Z\'\-]+(?:,\s*(?:President|Vice\s+President|Secretary|'
+                r'Treasurer|Director|Counsel|Officer|Manager|Clerk|Town\s+\w+|Assistant)[^\n]{0,30})?'
+            ), '[REDACTED-NAME]'))
+            # Standalone titles on their own or at end of name lines
             self.patterns.append(('person_names', re.compile(
                 r'(?:Chief\s+(?:Executive|Financial|Operating|Legal|Technology)\s+Officer|'
-                r'President|Vice\s+President|Secretary|Treasurer|General\s+Counsel|Director|'
-                r'CEO|CFO|COO|CTO|CLO)\s*$',
+                r'President\s+and\s+CEO|President|Vice\s+President|Secretary|Treasurer|'
+                r'General\s+Counsel|Director|CEO|CFO|COO|CTO|CLO|Town\s+Manager|Town\s+Clerk|'
+                r'Assistant\s+to\s+CEO)\s*$',
                 re.MULTILINE | re.IGNORECASE
             ), '[REDACTED-TITLE]'))
             # "between ... and ..." party names (ALL CAPS person names only)
