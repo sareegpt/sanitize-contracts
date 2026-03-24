@@ -447,6 +447,13 @@ class ContractSanitizer:
                 r'[A-Z][a-z]+(?:\s[A-Z][a-z]+)*,\s*(?:' + self.US_STATES + r')\s+\d{5}(?:-\d{4})?',
                 re.IGNORECASE
             ), '[REDACTED-ADDRESS]'))
+            # International addresses: "Address" label followed by multi-line address
+            self.patterns.append(('addresses', re.compile(
+                r'(?:Address|ADDRESS)\s+\d[\d\-,\s]+[A-Z][A-Za-z\s,\.\-\d]{10,120}(?:Hong\s*Kong|Vanuatu|Singapore|Malaysia|'
+                r'Kuala\s*Lumpur|London|Tokyo|Sydney|Beijing|Shanghai|Seoul|Taipei|Mumbai|'
+                r'United\s*Kingdom|Australia|Canada|Germany|France|Japan|China|India)',
+                re.IGNORECASE
+            ), '[REDACTED-ADDRESS]'))
 
         # 7. Dollar amounts
         if self.config.get('dollar_amounts'):
@@ -462,8 +469,10 @@ class ContractSanitizer:
 
         # 8. Dates
         if self.config.get('dates'):
-            months = (r'January|February|March|April|May|June|July|August|'
-                      r'September|October|November|December|'
+            months = (r'January|Janaury|February|Febuary|March|April|May|June|July|August|'
+                      r'September|Sepetmber|October|November|Novemeber|December|Decemeber|'
+                      r'JANUARY|JANAURY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|'
+                      r'SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER|'
                       r'Jan\.?|Feb\.?|Mar\.?|Apr\.?|Jun\.?|Jul\.?|Aug\.?|'
                       r'Sep(?:t)?\.?|Oct\.?|Nov\.?|Dec\.?')
             # Month DD, YYYY
@@ -504,19 +513,20 @@ class ContractSanitizer:
                 r'International|Technologies|Solutions|Therapeutics|'
                 r'Pharmaceuticals|BioManufacturing|Biotech|Industries'
             )
-            # Mixed case: "Reynolds Consumer Products Inc."
-            # Allow plain spaces between capitalized words
+            # Company names: capitalized words separated by spaces/&/and/commas, followed by suffix
+            # Include both mixed case and ALL CAPS suffix variants
+            all_suffixes = (
+                corp_suffixes + r'|'
+                r'INC\.?|CORP\.?|CORPORATION|COMPANY|CO\.?|LTD\.?|LIMITED|'
+                r'LLC|LLP|LP|PLC|PTE\.?|GMBH|AG|ASSOCIATES|PARTNERS|'
+                r'GROUP|HOLDINGS|ENTERPRISES|INTERNATIONAL|TECHNOLOGIES|'
+                r'SOLUTIONS|INDUSTRIES'
+            )
+            suffix_pat = r'(?:' + all_suffixes + r')'
             self.patterns.append(('company_names', re.compile(
-                r'\b[A-Z][A-Za-z\'-]+(?:\s+(?:and\s+|&\s+|of\s+|the\s+)?[A-Z][A-Za-z\'-]+){0,6}\s*'
-                r'(?:,\s*)?'
-                r'(?:' + corp_suffixes + r')\b\.?',
+                r'\b[A-Z][A-Za-z\'\-]+(?:(?:\s+(?:and|AND|&|of|OF|the|THE)\s+|\s*,\s*|\s+)[A-Z][A-Za-z\'\-]+)*'
+                r'(?:\s*,\s*|\s+)' + suffix_pat + r'\b\.?',
                 re.MULTILINE
-            ), '[REDACTED-COMPANY]'))
-            # ALL CAPS: "REYNOLDS CONSUMER PRODUCTS INC."
-            self.patterns.append(('company_names', re.compile(
-                r'\b[A-Z][A-Z\'-]+(?:\s+(?:AND\s+|&\s+|OF\s+|THE\s+)?[A-Z][A-Z\'-]+){0,7}\s*'
-                r'(?:,\s*)?'
-                r'(?:' + corp_suffixes.upper().replace(r'\.', r'\.').replace(r'\?', r'\?') + r')\b\.?'
             ), '[REDACTED-COMPANY]'))
             # "Source: COMPANY NAME, S-1" SEC filing footers
             self.patterns.append(('company_names', re.compile(
@@ -541,6 +551,15 @@ class ContractSanitizer:
             self.patterns.append(('person_names', re.compile(
                 r'(?:Name|Signed|Authorized\s+by)\s*:\s*[A-Z][a-zA-Z\']+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z\'\-]+){1,3}',
                 re.IGNORECASE
+            ), '[REDACTED-NAME]'))
+            # "Witness Name Firstname Lastname" pattern
+            self.patterns.append(('person_names', re.compile(
+                r'(?:Witness\s+Name|Witness\s+Signature|Printed\s+Name)\s+[A-Z][a-zA-Z\']+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-zA-Z\'\-]+){1,3}'
+            ), '[REDACTED-NAME]'))
+            # "Name Firstname Lastname" without colon (witness/signer blocks)
+            self.patterns.append(('person_names', re.compile(
+                r'\bName\s+[A-Z][a-z\']+\s+[A-Z][a-z\']+(?:\s+[A-Z][a-z\']+)?(?=\s*[_\n,]|\s*$)',
+                re.MULTILINE
             ), '[REDACTED-NAME]'))
             # /s/ and //s// signature blocks (handle middle initials, apostrophes, hyphens)
             self.patterns.append(('person_names', re.compile(
@@ -717,10 +736,43 @@ class ContractSanitizer:
         doc.save(buf)
         return buf.getvalue(), dict(self.stats)
 
+    # Patterns for suspicious-but-uncertain content (highlighted yellow, not redacted)
+    SUSPECT_PATTERNS = [
+        # Potential person names: 2-3 capitalized words in a row (not after known triggers)
+        re.compile(r'(?<!\[REDACTED)(?<!\w)\b([A-Z][a-z]{2,15}\s+[A-Z][a-z]{2,15}(?:\s+[A-Z][a-z]{2,15})?)\b'),
+        # Potential company names without standard suffixes
+        re.compile(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){2,4})\b'),
+        # Numbers that could be account/reference numbers (6+ digits)
+        re.compile(r'\b(\d{6,})\b'),
+        # Potential partial addresses (number + word + common road words)
+        re.compile(r'\b(\d{1,5}\s+[A-Z][a-z]+\s+(?:Road|Street|Avenue|Lane|Drive|Highway|Boulevard|Way|Floor|Suite|Unit|Level))\b', re.IGNORECASE),
+    ]
+
+    def _find_suspects(self, text):
+        """Find text spans that MIGHT be PII but weren't confidently redacted."""
+        suspects = set()
+        for pat in self.SUSPECT_PATTERNS:
+            for m in pat.finditer(text):
+                candidate = m.group(1) if m.lastindex else m.group(0)
+                # Skip if already redacted
+                if '[REDACTED' in candidate:
+                    continue
+                # Skip very common legal words
+                words = candidate.split()
+                if all(w.strip('.,;:') in self.NOT_NAMES or w.strip('.,;:').upper() in {x.upper() for x in self.NOT_NAMES} for w in words):
+                    continue
+                # Skip short or numeric-only
+                if len(candidate) < 4:
+                    continue
+                suspects.add(candidate)
+        return suspects
+
     def sanitize_pdf(self, file_bytes):
-        """Sanitize PDF: extract text, sanitize, create new PDF."""
+        """Sanitize PDF: extract text, sanitize, output as DOCX with yellow highlights for uncertain items."""
         import PyPDF2
-        from fpdf import FPDF
+        import docx
+        from docx.shared import Pt, RGBColor
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
 
         self._reset_stats()
 
@@ -743,46 +795,144 @@ class ContractSanitizer:
         for k, v in stats.items():
             self.stats[k] = self.stats.get(k, 0) + v
 
-        # Create new PDF with sanitized text using fpdf2
-        # Use write() instead of multi_cell() to avoid "Not enough horizontal
-        # space" crashes that fpdf2 throws on certain character sequences
-        pdf = FPDF()
-        pdf.set_auto_page_break(auto=True, margin=15)
-        pdf.add_page()
-        pdf.set_font('Helvetica', 'B', 12)
-        pdf.cell(w=0, h=10, text='SANITIZED DOCUMENT', center=True)
-        pdf.ln(12)
-        pdf.set_font('Helvetica', 'I', 8)
-        pdf.cell(w=0, h=6, text='Sensitive information has been redacted.', center=True)
-        pdf.ln(10)
-        pdf.set_font('Courier', '', 8)
+        # Find suspicious items that might need manual review
+        suspects = self._find_suspects(sanitized)
 
-        # Write sanitized text using write() which handles wrapping internally
-        # and doesn't crash on edge-case character widths like multi_cell does
+        # Create DOCX output with yellow highlights for suspects
+        doc = docx.Document()
+
+        # Style setup
+        style = doc.styles['Normal']
+        style.font.size = Pt(9)
+        style.font.name = 'Calibri'
+
+        # Header
+        h = doc.add_heading('SANITIZED DOCUMENT', level=1)
+        h.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        notice = doc.add_paragraph()
+        notice.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = notice.add_run('Sensitive information has been redacted. ')
+        run.font.size = Pt(8)
+        run.italic = True
+        if suspects:
+            run2 = notice.add_run('Items highlighted in YELLOW may need manual review.')
+            run2.font.size = Pt(8)
+            run2.italic = True
+            run2.bold = True
+
+        doc.add_paragraph('')  # spacer
+
+        # Write sanitized text with highlights
+        from docx.oxml.ns import qn
+        from docx.oxml import OxmlElement
+
+        def add_yellow_highlight(run):
+            """Add yellow highlight to a docx run."""
+            rPr = run._element.get_or_add_rPr()
+            highlight = OxmlElement('w:highlight')
+            highlight.set(qn('w:val'), 'yellow')
+            rPr.append(highlight)
+
+        def add_redact_formatting(run):
+            """Format redacted text with red color and bold."""
+            run.bold = True
+            run.font.color.rgb = RGBColor(180, 0, 0)
+
+        # Sort suspects by length (longest first) to avoid partial matches
+        sorted_suspects = sorted(suspects, key=len, reverse=True)
+
         for line in sanitized.split('\n'):
-            # Encode to latin-1 (Courier/Helvetica only support this)
-            try:
-                safe = line.encode('latin-1', 'replace').decode('latin-1')
-            except BaseException:
-                safe = line.encode('ascii', 'replace').decode('ascii')
-            # Strip control chars
-            safe = ''.join(c if ord(c) >= 32 or c == '\t' else ' ' for c in safe)
-            # Use write + ln instead of multi_cell
-            try:
-                if safe.strip():
-                    pdf.write(4, safe)
-                pdf.ln(4)
-            except BaseException:
-                # Absolute last resort: skip this line
-                try:
-                    pdf.ln(4)
-                except BaseException:
-                    pass
+            if line.strip() == '--- Page Break ---':
+                doc.add_page_break()
+                continue
 
-        pdf_bytes = pdf.output()
-        if isinstance(pdf_bytes, bytearray):
-            pdf_bytes = bytes(pdf_bytes)
-        return pdf_bytes, dict(self.stats)
+            para = doc.add_paragraph()
+
+            if not line.strip():
+                continue
+
+            # Split line into segments: redacted tags, suspect spans, and normal text
+            # First, find all redacted tags and suspect spans with their positions
+            import re as _re
+            segments = []
+            pos = 0
+
+            # Find all [REDACTED-*] tags
+            tag_pattern = _re.compile(r'\[REDACTED-[A-Z]+\]')
+            all_matches = []
+
+            for m in tag_pattern.finditer(line):
+                all_matches.append((m.start(), m.end(), 'redacted', m.group()))
+
+            # Find all suspect spans
+            for suspect in sorted_suspects:
+                for m in _re.finditer(_re.escape(suspect), line):
+                    # Check it doesn't overlap with a redacted tag
+                    overlaps = False
+                    for ms, me, _, _ in all_matches:
+                        if m.start() < me and m.end() > ms:
+                            overlaps = True
+                            break
+                    if not overlaps:
+                        all_matches.append((m.start(), m.end(), 'suspect', m.group()))
+
+            # Sort by position
+            all_matches.sort(key=lambda x: x[0])
+
+            # Remove overlapping matches (keep first)
+            filtered = []
+            last_end = 0
+            for ms, me, mtype, mtext in all_matches:
+                if ms >= last_end:
+                    filtered.append((ms, me, mtype, mtext))
+                    last_end = me
+
+            # Build runs
+            pos = 0
+            for ms, me, mtype, mtext in filtered:
+                # Normal text before this match
+                if pos < ms:
+                    normal = line[pos:ms]
+                    if normal:
+                        run = para.add_run(normal)
+                        run.font.size = Pt(9)
+
+                # The match itself
+                run = para.add_run(mtext)
+                run.font.size = Pt(9)
+                if mtype == 'redacted':
+                    add_redact_formatting(run)
+                elif mtype == 'suspect':
+                    add_yellow_highlight(run)
+
+                pos = me
+
+            # Remaining text after last match
+            if pos < len(line):
+                remaining = line[pos:]
+                if remaining:
+                    run = para.add_run(remaining)
+                    run.font.size = Pt(9)
+
+        # Legend at the end
+        doc.add_paragraph('')
+        legend = doc.add_paragraph()
+        legend.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r1 = legend.add_run('[REDACTED-*]')
+        add_redact_formatting(r1)
+        r1.font.size = Pt(8)
+        r2 = legend.add_run(' = Automatically redacted  |  ')
+        r2.font.size = Pt(8)
+        r3 = legend.add_run('Yellow highlight')
+        r3.font.size = Pt(8)
+        add_yellow_highlight(r3)
+        r4 = legend.add_run(' = Potential PII - please review manually')
+        r4.font.size = Pt(8)
+
+        buf = io.BytesIO()
+        doc.save(buf)
+        return buf.getvalue(), dict(self.stats)
 
 
 def sanitize_from_js(file_bytes_input, extension, config_json='{}'):
@@ -912,8 +1062,7 @@ def sanitize_from_js(file_bytes_input, extension, config_json='{}'):
             setProgress(70, 'Installing PyPDF2...');
             await micropip.install('PyPDF2');
 
-            setProgress(82, 'Installing fpdf2...');
-            await micropip.install('fpdf2');
+            setProgress(82, 'Finalizing...');
 
             setProgress(92, 'Loading sanitization engine...');
             const pyCode = document.getElementById('sanitizer-code').textContent;
@@ -1034,10 +1183,15 @@ sanitize_from_js(bytes(_file_bytes_py), str(_file_ext), str(_config_json))
                 const mimeTypes = {
                     'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                    'pdf': 'application/pdf',
+                    'pdf': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                     'txt': 'text/plain',
                     'csv': 'text/csv',
                 };
+
+                // PDF input produces DOCX output (for manual review in Word)
+                if (next.ext === 'pdf') {
+                    next.outputExt = 'docx';
+                }
 
                 next.resultBlob = new Blob([bytes], { type: mimeTypes[next.ext] || 'application/octet-stream' });
                 next.stats = result.stats;
@@ -1092,9 +1246,14 @@ sanitize_from_js(bytes(_file_bytes_py), str(_file_ext), str(_config_json))
                 }
             }
 
+            if (item.outputExt && item.status === 'done') {
+                statsHtml += '<div class="file-stats" style="color:var(--accent)">Output as .docx for manual review (yellow = needs review)</div>';
+            }
+
             let actionHtml = '';
             if (item.status === 'done') {
-                actionHtml = `<button class="btn btn-green btn-sm" data-download="${item.id}">Download</button>`;
+                const dlLabel = item.outputExt ? 'Download .docx' : 'Download';
+                actionHtml = `<button class="btn btn-green btn-sm" data-download="${item.id}">${dlLabel}</button>`;
             }
 
             li.innerHTML = `
@@ -1122,6 +1281,15 @@ sanitize_from_js(bytes(_file_bytes_py), str(_file_ext), str(_config_json))
         }
     }
 
+    // Get output filename (PDF → DOCX, others keep extension)
+    function getOutputName(item) {
+        let name = 'SANITIZED_' + item.name;
+        if (item.outputExt) {
+            name = name.replace(/\.[^.]+$/, '.' + item.outputExt);
+        }
+        return name;
+    }
+
     // Download handlers
     fileList.addEventListener('click', (e) => {
         const btn = e.target.closest('[data-download]');
@@ -1129,7 +1297,7 @@ sanitize_from_js(bytes(_file_bytes_py), str(_file_ext), str(_config_json))
         const id = btn.dataset.download;
         const item = fileQueue.find(f => f.id === id);
         if (item && item.resultBlob) {
-            downloadFile(item.resultBlob, 'SANITIZED_' + item.name);
+            downloadFile(item.resultBlob, getOutputName(item));
         }
     });
 
@@ -1138,7 +1306,7 @@ sanitize_from_js(bytes(_file_bytes_py), str(_file_ext), str(_config_json))
         if (doneFiles.length === 0) return;
 
         if (doneFiles.length === 1) {
-            downloadFile(doneFiles[0].resultBlob, 'SANITIZED_' + doneFiles[0].name);
+            downloadFile(doneFiles[0].resultBlob, getOutputName(doneFiles[0]));
             return;
         }
 
@@ -1147,7 +1315,7 @@ sanitize_from_js(bytes(_file_bytes_py), str(_file_ext), str(_config_json))
         try {
             const zip = new JSZip();
             for (const item of doneFiles) {
-                zip.file('SANITIZED_' + item.name, item.resultBlob);
+                zip.file(getOutputName(item), item.resultBlob);
             }
             const blob = await zip.generateAsync({ type: 'blob' });
             downloadFile(blob, 'SANITIZED_contracts.zip');
