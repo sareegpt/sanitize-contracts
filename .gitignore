@@ -1,0 +1,12 @@
+CUAD_v1*
+*.pdf
+*.xlsx
+*.docx
+*.csv
+*.txt
+!sanitizer.html
+.DS_Store
+__pycache__/
+*.pyc
+frontend_shell.html
+sanitizer_engine.py
