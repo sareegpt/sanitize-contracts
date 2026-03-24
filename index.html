@@ -429,9 +429,11 @@ class ContractSanitizer:
                 re.IGNORECASE
             ), '[REDACTED-ADDRESS]'))
             # Street address with city/state/zip (bounded to prevent ReDoS)
-            # Negative lookbehind prevents matching "Section 10.2" or "Article 12.3"
+            # Negative lookbehind prevents matching section/exhibit numbers
             self.patterns.append(('addresses', re.compile(
                 r'(?<![Ss]ection\s)(?<![Aa]rticle\s)(?<![Pp]aragraph\s)(?<![Ee]xhibit\s)'
+                r'(?<![Ss]ection )(?<![Aa]rticle )(?<![Ee]xhibit )(?<![Ss]ubsection )'
+                r'(?<!\.)(?<!\d\.)'
                 r'\b\d{2,6}\s+[A-Z][a-zA-Z\. ]{2,40}'
                 r'(?:Street|St\.?|Avenue|Ave\.?|Boulevard|Blvd\.?|Drive|Dr\.?|'
                 r'Road|Rd\.?|Lane|Ln\.?|Way|Court|Ct\.?|Place|Pl\.?|'
@@ -494,26 +496,27 @@ class ContractSanitizer:
 
         # 10. Company names (with corporate suffixes)
         if self.config.get('company_names'):
-            # Mixed case: "Reynolds Consumer Products Inc."
-            self.patterns.append(('company_names', re.compile(
-                r'\b(?:[A-Z][A-Za-z\'-]*(?:\s+(?:and|&|of|the)\s+)?){1,6}\s*'
-                r'(?:,\s*)?'
-                r'(?:Inc\.?|LLC|L\.L\.C\.?|Ltd\.?|LTD\.?|Corp\.?|Corporation|'
+            corp_suffixes = (
+                r'Inc\.?|LLC|L\.L\.C\.?|Ltd\.?|LTD\.?|Corp\.?|Corporation|'
                 r'Company|Co\.?|LLP|L\.L\.P\.?|LP|L\.P\.?|PLC|P\.L\.C\.?|'
                 r'PTE\.?|GmbH|AG|S\.A\.?|N\.V\.?|B\.V\.?|Pty\.? {0,2}Ltd\.?|'
                 r'Limited|Associates|Partners|Group|Holdings|Enterprises|'
                 r'International|Technologies|Solutions|Therapeutics|'
-                r'Pharmaceuticals|BioManufacturing|Biotech|Industries)\b\.?',
+                r'Pharmaceuticals|BioManufacturing|Biotech|Industries'
+            )
+            # Mixed case: "Reynolds Consumer Products Inc."
+            # Allow plain spaces between capitalized words
+            self.patterns.append(('company_names', re.compile(
+                r'\b[A-Z][A-Za-z\'-]+(?:\s+(?:and\s+|&\s+|of\s+|the\s+)?[A-Z][A-Za-z\'-]+){0,6}\s*'
+                r'(?:,\s*)?'
+                r'(?:' + corp_suffixes + r')\b\.?',
                 re.MULTILINE
             ), '[REDACTED-COMPANY]'))
             # ALL CAPS: "REYNOLDS CONSUMER PRODUCTS INC."
             self.patterns.append(('company_names', re.compile(
-                r'\b(?:[A-Z][A-Z\'-]+(?:\s+(?:AND|&|OF|THE)\s+)?(?:\s+)?){1,8}'
+                r'\b[A-Z][A-Z\'-]+(?:\s+(?:AND\s+|&\s+|OF\s+|THE\s+)?[A-Z][A-Z\'-]+){0,7}\s*'
                 r'(?:,\s*)?'
-                r'(?:INC\.?|LLC|LTD\.?|CORP\.?|CORPORATION|COMPANY|CO\.?|'
-                r'LLP|LP|PLC|PTE\.?|GMBH|AG|LIMITED|ASSOCIATES|PARTNERS|'
-                r'GROUP|HOLDINGS|ENTERPRISES|INTERNATIONAL|TECHNOLOGIES|'
-                r'SOLUTIONS|INDUSTRIES)\b\.?'
+                r'(?:' + corp_suffixes.upper().replace(r'\.', r'\.').replace(r'\?', r'\?') + r')\b\.?'
             ), '[REDACTED-COMPANY]'))
             # "Source: COMPANY NAME, S-1" SEC filing footers
             self.patterns.append(('company_names', re.compile(
@@ -554,11 +557,10 @@ class ContractSanitizer:
                 r'CEO|CFO|COO|CTO|CLO)\s*$',
                 re.MULTILINE | re.IGNORECASE
             ), '[REDACTED-TITLE]'))
-            # "between ... and ..." party names (person names, 2-3 capitalized words)
+            # "between ... and ..." party names (ALL CAPS person names only)
             self.patterns.append(('person_names', re.compile(
                 r'(?:between|by\s+and\s+between|golfer,?|professional)\s+'
-                r'([A-Z][A-Z]+(?:\s+[A-Z][A-Z]*\.?){1,3})',
-                re.IGNORECASE
+                r'([A-Z][A-Z]+(?:\s+[A-Z][A-Z]+){1,3})'
             ), '[REDACTED-NAME]'))
             # ALL CAPS person names (like TOM WATSON) - 2-3 capitalized words
             self.patterns.append(('person_names', re.compile(
@@ -598,6 +600,12 @@ class ContractSanitizer:
                         return repl
                     return replacer
                 result = pattern.sub(make_replacer(category, replacement), result)
+
+        # Clean up artifacts from overlapping patterns
+        result = re.sub(r'\[\[REDACTED-', '[REDACTED-', result)
+        result = re.sub(r'\]\]', ']', result)
+        # Remove redundant adjacent redactions of same type
+        result = re.sub(r'(\[REDACTED-\w+\])\s*\1', r'\1', result)
 
         return result, dict(self.stats)
 
