@@ -681,65 +681,54 @@ class ContractSanitizer:
                 text = page.extract_text()
                 if text:
                     all_text.append(text)
-            except Exception:
+            except BaseException:
                 all_text.append('[Unable to extract text from this page]')
 
         if not all_text:
-            return file_bytes, dict(self.stats)  # Return original if no text extracted
+            return file_bytes, dict(self.stats)
 
         full_text = '\n\n--- Page Break ---\n\n'.join(all_text)
         sanitized, stats = self.sanitize_text(full_text)
         for k, v in stats.items():
             self.stats[k] = self.stats.get(k, 0) + v
 
-        # Create new PDF with sanitized text
+        # Create new PDF with sanitized text using fpdf2
+        # Use write() instead of multi_cell() to avoid "Not enough horizontal
+        # space" crashes that fpdf2 throws on certain character sequences
         pdf = FPDF()
-        pdf.set_auto_page_break(auto=True, margin=20)
+        pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
-
-        # Header - use multi_cell for maximum compatibility across fpdf2 versions
         pdf.set_font('Helvetica', 'B', 12)
-        pdf.multi_cell(0, 10, 'SANITIZED DOCUMENT', align='C')
+        pdf.cell(w=0, h=10, text='SANITIZED DOCUMENT', center=True)
+        pdf.ln(12)
         pdf.set_font('Helvetica', 'I', 8)
-        pdf.multi_cell(0, 6, 'Sensitive information has been redacted.', align='C')
-        pdf.ln(6)
-        pdf.set_font('Helvetica', '', 9)
+        pdf.cell(w=0, h=6, text='Sensitive information has been redacted.', center=True)
+        pdf.ln(10)
+        pdf.set_font('Courier', '', 8)
 
-        # Write sanitized text line by line
-        page_width = pdf.w - pdf.l_margin - pdf.r_margin
-        char_width = pdf.get_string_width('a') or 2.5
-        max_chars = max(20, int(page_width / char_width))
-
+        # Write sanitized text using write() which handles wrapping internally
+        # and doesn't crash on edge-case character widths like multi_cell does
         for line in sanitized.split('\n'):
-            # Handle encoding - fpdf2 Helvetica only supports latin-1
+            # Encode to latin-1 (Courier/Helvetica only support this)
             try:
-                safe_line = line.encode('latin-1', 'replace').decode('latin-1')
-            except Exception:
-                safe_line = line.encode('ascii', 'replace').decode('ascii')
-
-            # Strip control characters that crash fpdf2
-            safe_line = ''.join(c if ord(c) >= 32 or c in '\t' else ' ' for c in safe_line)
-
-            # Force-wrap very long unbroken tokens
-            if safe_line and len(safe_line) > max_chars and ' ' not in safe_line.strip():
-                chunks = [safe_line[i:i+max_chars] for i in range(0, len(safe_line), max_chars)]
-                for chunk in chunks:
-                    try:
-                        pdf.multi_cell(0, 4.5, chunk)
-                    except Exception:
-                        pass
-            else:
+                safe = line.encode('latin-1', 'replace').decode('latin-1')
+            except BaseException:
+                safe = line.encode('ascii', 'replace').decode('ascii')
+            # Strip control chars
+            safe = ''.join(c if ord(c) >= 32 or c == '\t' else ' ' for c in safe)
+            # Use write + ln instead of multi_cell
+            try:
+                if safe.strip():
+                    pdf.write(4, safe)
+                pdf.ln(4)
+            except BaseException:
+                # Absolute last resort: skip this line
                 try:
-                    pdf.multi_cell(0, 4.5, safe_line)
-                except Exception:
-                    # Fallback: truncate the line
-                    try:
-                        pdf.multi_cell(0, 4.5, safe_line[:max_chars])
-                    except Exception:
-                        pass  # Skip completely unrenderable lines
+                    pdf.ln(4)
+                except BaseException:
+                    pass
 
-        # Output to bytes
-        pdf_bytes = pdf.output()  # fpdf2 returns bytes directly when no arg
+        pdf_bytes = pdf.output()
         if isinstance(pdf_bytes, bytearray):
             pdf_bytes = bytes(pdf_bytes)
         return pdf_bytes, dict(self.stats)
